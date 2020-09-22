@@ -26,6 +26,7 @@ classdef Ksysid
         model_type; % 'linear' or 'nonlinear'
         loaded;     % true or false. Does the system include loads?
         dim_red;    % true or false. Should SVD dimensional reduction be performed?
+        data_type;  % 'timeseries' or 'snapshots'
         
         traindata;  % scaled exp/sim data for training the model
         valdata;    % scaled exp/sim data for validating the model
@@ -46,6 +47,21 @@ classdef Ksysid
                 error('Input must have *train* and *val* fields of type cell array');
             end
             
+            % set defualt values of Name, Value optional arguments
+            obj.isupdate = false;
+            obj.obs_type = { 'poly' };
+            obj.obs_degree = [ 1 ];
+            obj.snapshots = Inf;
+            obj.lasso = [ 1e6 ]; % default is least squares solution
+            obj.delays = 0; % default 0 (was 1 to ensure model is dynamic)
+            obj.model_type = 'linear';
+            obj.loaded = false;
+            obj.dim_red = false;
+            obj.data_type = 'timeseries'; 
+            
+            % replace default values with user input values
+            obj = obj.parse_args( varargin{:} );
+            
             % isolate one trial to extract some model parameters
             data = data4sysid.train{1};
             data4train = data4sysid.train;
@@ -53,10 +69,19 @@ classdef Ksysid
             
             % set param values based on the data
             obj.params = struct;    % initialize params struct
-            obj.params.n = size( data.y , 2 );  % dimension of measured state
-            obj.params.m = size( data.u , 2 );  % dimension of input
-            obj.params.Ts = mean( data.t(2:end) - data.t(1:end-1) );    % sampling time
+            if strcmp( obj.data_type , 'snapshots' )
+                obj.params.n = size( data.y_after , 2 );  % dimension of measured state
+                obj.params.m = size( data.u , 2 );  % dimension of input
+                obj.params.Ts = data.Ts;    % sampling time
+            else
+                obj.params.n = size( data.y , 2 );  % dimension of measured state
+                obj.params.m = size( data.u , 2 );  % dimension of input
+                obj.params.Ts = mean( data.t(2:end) - data.t(1:end-1) );    % sampling time
+            end
             obj.params.isfake = false;  % assume system is real
+            obj.params.nd = obj.delays;  % saves copy in params (for consistency with mpc class)
+            obj.params.nzeta = obj.params.n * ( obj.delays + 1 ) + obj.params.m * obj.delays;
+                
             
             % if data has a params field save it as sysParams
             if isfield( data , 'params' )
@@ -67,21 +92,6 @@ classdef Ksysid
             % initialize structs
             obj.lift = struct;  % initialize lift struct
             obj.basis = struct; % initialize basis struct
-            
-            % set defualt values of Name, Value optional arguments
-            obj.isupdate = false;
-            obj.obs_type = { 'poly' };
-            obj.obs_degree = [ 1 ];
-            obj.snapshots = Inf;
-            obj.lasso = [ 1e6 ]; % default is least squares solution
-            obj.delays = 0; % default 0 (was 1 to ensure model is dynamic)
-            obj.model_type = 'linear';
-            obj.loaded = false;
-            
-            % replace default values with user input values
-            obj = obj.parse_args( varargin{:} );
-            obj.params.nd = obj.delays;  % saves copy in params (for consistency with mpc class)
-            obj.params.nzeta = obj.params.n * ( obj.delays + 1 ) + obj.params.m * obj.delays;
             
             % specify dimension of the loading condition
             if obj.loaded && isfield( data , 'w' )
@@ -118,15 +128,15 @@ classdef Ksysid
             
             % scale data to be in range [-1 , 1]
             [ traindata , obj ] = obj.get_scale( data4train_merged );
-            valdata = cell( size( data4val ) );
-            for i = 1 : length( data4val )
-                valdata{i} = obj.scale_data( data4val{i} );
-            end
+%             valdata = cell( size( data4val ) );
+%             for i = 1 : length( data4val )
+%                 valdata{i} = obj.scale_data( data4val{i} );
+%             end
             obj.traindata = traindata;
-            obj.valdata = valdata;
-%             % To suppress scaling, comment this in and comment out above 2 lines
+%             obj.valdata = valdata;
+%             % To suppress scaling, comment this in and comment out above
 %             obj.traindata = data4train_merged;
-%             obj.valdata = data4val;
+            obj.valdata = data4val;
             
             % get shapshot pairs from traindata
             obj.snapshotPairs = obj.get_snapshotPairs( obj.traindata , obj.snapshots );
@@ -172,6 +182,11 @@ classdef Ksysid
             %    data - struct containing fields t , y , u (at least)
             %    data_scaled - struct containing t , y , u , x (optional)   
             
+            % if data type is snapshots, scale based on values of y_after
+            if strcmp( obj.data_type , 'snapshots' )
+                data.y = data.y_after;
+            end
+            
             % get min/max values in each dimension
             y_min = min( data.y );
             u_min = min( data.u );
@@ -188,9 +203,14 @@ classdef Ksysid
             
             % shift and scale the data
             data_scaled = struct;    % initialize
-            data_scaled.t = data.t;  % time is not scaled
-            data_scaled.y = ( data.y - y_dc ) ./ scale_y;
             data_scaled.u = ( data.u - u_dc ) ./ scale_u;
+            if strcmp( obj.data_type , 'snapshots' )
+                data_scaled.y_before = ( data.y_before - y_dc ) ./ scale_y;
+                data_scaled.y_after = ( data.y_after - y_dc ) ./ scale_y;
+            else
+                data_scaled.t = data.t;  % time is not scaled
+                data_scaled.y = ( data.y - y_dc ) ./ scale_y;
+            end
             
             % save scaling functions
             y = sym( 'y' , [ 1 , obj.params.n ] );
@@ -899,18 +919,18 @@ classdef Ksysid
                 data = data_merged; % replace cell array with merged data struct
             end
             
-            % check if data has a zeta field, create one if not
-            if ~ismember( 'zeta' , fields(data) )
+            % check if timeseries data has a zeta field, create one if not
+            if ~ismember( 'zeta' , fields(data) ) && strcmp( obj.data_type , 'timeseries' )
                 data = obj.get_zeta( data );
             end
             
-            % If snapshots are already defined in data file use those
-            if ismember( 'snapshots' , fields(data) )
-                snapshotPairs.alpha = data.snapshots.alpha;
-                snapshotPairs.beta = data.snapshots.beta;
-                snapshotPairs.u = data.snapshots.u;
-                if ismember( 'w' , fields(data.snapshots) )
-                    snapshotPairs.w = data.snapshots.w;
+            % If training data type is already snapshots, use them
+            if strcmp( obj.data_type , 'snapshots' )
+                snapshotPairs.alpha = data.y_before;
+                snapshotPairs.beta = data.y_after;
+                snapshotPairs.u = data.u;
+                if ismember( 'w' , fields(data) )
+                    snapshotPairs.w = data.w;
                 end
             else    % otherwise, construct them from time-series data 
                 % separate data into 'before' and 'after' time step
