@@ -47,28 +47,6 @@ classdef Ksysid
                 error('Input must have *train* and *val* fields of type cell array');
             end
             
-            % isolate one trial to extract some model parameters
-            data = data4sysid.train{1};
-            data4train = data4sysid.train;
-            data4val = data4sysid.val;
-            
-            % set param values based on the data
-            obj.params = struct;    % initialize params struct
-            obj.params.n = size( data.y , 2 );  % dimension of measured state
-            obj.params.m = size( data.u , 2 );  % dimension of input
-            obj.params.Ts = mean( data.t(2:end) - data.t(1:end-1) );    % sampling time
-            obj.params.isfake = false;  % assume system is real
-            
-            % if data has a params field save it as sysParams
-            if isfield( data , 'params' )
-                obj.params.sysParams = data.params;
-                obj.params.isfake = true;   % if params field exist the system is fake
-            end
-            
-            % initialize structs
-            obj.lift = struct;  % initialize lift struct
-            obj.basis = struct; % initialize basis struct
-            
             % set defualt values of Name, Value optional arguments
             obj.isupdate = false;
             obj.obs_type = { 'poly' };
@@ -83,8 +61,37 @@ classdef Ksysid
             
             % replace default values with user input values
             obj = obj.parse_args( varargin{:} );
+            
+            % isolate one trial to extract some model parameters
+            data = data4sysid.train{1};
+            data4train = data4sysid.train;
+            data4val = data4sysid.val;
+            
+            % set param values based on the data
+            obj.params = struct;    % initialize params struct
+            if strcmp( obj.data_type , 'snapshots' )
+                obj.params.n = size( data.y_after , 2 );  % dimension of measured state
+                obj.params.m = size( data.u , 2 );  % dimension of input
+                obj.params.Ts = data.Ts;    % sampling time
+            else
+                obj.params.n = size( data.y , 2 );  % dimension of measured state
+                obj.params.m = size( data.u , 2 );  % dimension of input
+                obj.params.Ts = mean( data.t(2:end) - data.t(1:end-1) );    % sampling time
+            end
+            obj.params.isfake = false;  % assume system is real
             obj.params.nd = obj.delays;  % saves copy in params (for consistency with mpc class)
             obj.params.nzeta = obj.params.n * ( obj.delays + 1 ) + obj.params.m * obj.delays;
+                
+            
+            % if data has a params field save it as sysParams
+            if isfield( data , 'params' )
+                obj.params.sysParams = data.params;
+                obj.params.isfake = true;   % if params field exist the system is fake
+            end
+            
+            % initialize structs
+            obj.lift = struct;  % initialize lift struct
+            obj.basis = struct; % initialize basis struct
             
             % specify dimension of the loading condition
             if obj.loaded && isfield( data , 'w' )
@@ -121,15 +128,15 @@ classdef Ksysid
             
             % scale data to be in range [-1 , 1]
             [ traindata , obj ] = obj.get_scale( data4train_merged );
-            valdata = cell( size( data4val ) );
-            for i = 1 : length( data4val )
-                valdata{i} = obj.scale_data( data4val{i} );
-            end
+%             valdata = cell( size( data4val ) );
+%             for i = 1 : length( data4val )
+%                 valdata{i} = obj.scale_data( data4val{i} );
+%             end
             obj.traindata = traindata;
-            obj.valdata = valdata;
-%             % To suppress scaling, comment this in and comment out above 2 lines
+%             obj.valdata = valdata;
+%             % To suppress scaling, comment this in and comment out above
 %             obj.traindata = data4train_merged;
-%             obj.valdata = data4val;
+            obj.valdata = data4val;
             
             % get shapshot pairs from traindata
             obj.snapshotPairs = obj.get_snapshotPairs( obj.traindata , obj.snapshots );
@@ -196,12 +203,12 @@ classdef Ksysid
             
             % shift and scale the data
             data_scaled = struct;    % initialize
-            data_scaled.t = data.t;  % time is not scaled
             data_scaled.u = ( data.u - u_dc ) ./ scale_u;
             if strcmp( obj.data_type , 'snapshots' )
                 data_scaled.y_before = ( data.y_before - y_dc ) ./ scale_y;
                 data_scaled.y_after = ( data.y_after - y_dc ) ./ scale_y;
             else
+                data_scaled.t = data.t;  % time is not scaled
                 data_scaled.y = ( data.y - y_dc ) ./ scale_y;
             end
             
@@ -913,7 +920,7 @@ classdef Ksysid
             end
             
             % check if timeseries data has a zeta field, create one if not
-            if ~ismember( 'zeta' , fields(data) ) & strcmp( obj.data_type , 'timeseries' )
+            if ~ismember( 'zeta' , fields(data) ) && strcmp( obj.data_type , 'timeseries' )
                 data = obj.get_zeta( data );
             end
             
@@ -922,8 +929,8 @@ classdef Ksysid
                 snapshotPairs.alpha = data.y_before;
                 snapshotPairs.beta = data.y_after;
                 snapshotPairs.u = data.u;
-                if ismember( 'w' , fields(data.snapshots) )
-                    snapshotPairs.w = data.snapshots.w;
+                if ismember( 'w' , fields(data) )
+                    snapshotPairs.w = data.w;
                 end
             else    % otherwise, construct them from time-series data 
                 % separate data into 'before' and 'after' time step
@@ -1826,6 +1833,12 @@ classdef Ksysid
         function err = get_error( obj , simdata , realdata )
             %get_error: Computes the error between real and simulated data.
             
+            % if data is snapshots, rename field accordingly
+            if strcmp( obj.data_type , 'snapshots' )
+                simdata.y = simdata.y_after;
+                realdata.y = realdata.y_after;
+            end
+            
             % scaled down data in [-1,1]
             err.abs = abs( simdata.y - realdata.y );  % absolute error over time
             err.mean = mean( err.abs , 1 );   % average absolute error over time
@@ -1890,6 +1903,7 @@ classdef Ksysid
             results = cell( size(obj.valdata) );    % store results in a cell array
             err = cell( size(obj.valdata) );    % store error in a cell array
             for i = 1 : length(obj.valdata)
+                if strcmp( obj.data_type , '' )
                 if strcmp( obj.model_type , 'nonlinear' )
                     results{i} = obj.val_NLmodel( mod , obj.valdata{i} );
                 elseif strcmp( obj.model_type , 'bilinear' )
@@ -1910,6 +1924,43 @@ classdef Ksysid
             end
         end
         
+        % val_model_snapshots (validate and plot results for snapshot data)
+        function results = val_model_snapshots( obj , model , valdata )
+            %val_model_snapshots: Compares one-step model simulations to real snapshot data
+            %   model - struct with fields A, B, C, sys, ...
+            %   valdata - struct with fields t, y, u (at least)
+            %   results - struct with simulation results and error calculations
+            
+            % real residual system response
+            results.real.y_before = valdata.y_before;
+            results.real.y_after = valdata.y_after;
+            results.real.u = valdata.u;
+            
+            % simulated residual system response
+            results.sim.y_before = valdata.y_before;    % initialize from same points
+            results.sim.u = valdata.u;
+            
+            % simulate using residual model to get second half of snapshots
+            if strcmp( obj.model_type , 'nonlinear' )
+                for i = 1 : size( valdata.y_before , 1 )   
+                    results.sim.z_before(i,:) = obj.lift.econ_full( [ valdata.y_before(i,:) , valdata.u(i,:) ]' )';
+                    results.sim.z_after(i,:) = ( obj.model.A * results.sim.z_before(i,:)' + model.Beta( results.sim.z_before(i,:)' ) * results.u(i,:)' )';
+                    results.sim.y_after(i,:) = obj.model.C * results.sim.z_after(i,:)';
+                end
+            elseif strcmp( obj.model_type , 'bilinear' )
+                for i = 1 : size( valdata.y_before , 1 ) 
+                    results.sim.z_before(i,:) = obj.lift.econ_full( valdata.y_before(i,:)' )';
+                    results.sim.z_after(i,:) = ( obj.model.A * results.sim.z_before(i,:)' + model.Beta( results.sim.z_before(i,:)' ) * results.u(i,:)' )';
+                    results.sim.y_after(i,:) = obj.model.C * results.sim.z_after(i,:)';
+                end
+            else
+                for i = 1 : size( valdata.y_before , 1 )
+                    results.z_before(i,:) = obj.lift.econ_full( valdata.y_before(i,:)' )';
+                    results.z_after(i,:) = ( obj.model.A * results.sim.z_before(i,:)' + obj.model.B * results.sim.u(i,:)' )';
+                    results.y_after(i,:) = obj.model.C * results.sim.z_after(i,:)';
+                end
+            end
+        end
         
         %% infer the load based on learned dynamics
         

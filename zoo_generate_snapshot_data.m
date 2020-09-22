@@ -58,7 +58,8 @@ train{1}.y = y_after;   % save copy under this name for compatibility purposes
 train{1}.u = u;
 train{1}.Ts = Ts;   % need to save this value in all of the trials
 
-val = cell(1,1);    % deal with validation data later
+% Use same data for train and for val (FOR NOW)
+val = train;
 
 if saveon
     data4sysid = Data.get_data4sysid( train , val , true , 'pend-error' );

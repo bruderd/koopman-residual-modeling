@@ -128,15 +128,15 @@ classdef Ksysid
             
             % scale data to be in range [-1 , 1]
             [ traindata , obj ] = obj.get_scale( data4train_merged );
-%             valdata = cell( size( data4val ) );
-%             for i = 1 : length( data4val )
-%                 valdata{i} = obj.scale_data( data4val{i} );
-%             end
+            valdata = cell( size( data4val ) );
+            for i = 1 : length( data4val )
+                valdata{i} = obj.scale_data( data4val{i} );
+            end
             obj.traindata = traindata;
-%             obj.valdata = valdata;
+            obj.valdata = valdata;
 %             % To suppress scaling, comment this in and comment out above
 %             obj.traindata = data4train_merged;
-            obj.valdata = data4val;
+%             obj.valdata = data4val;
             
             % get shapshot pairs from traindata
             obj.snapshotPairs = obj.get_snapshotPairs( obj.traindata , obj.snapshots );
@@ -322,8 +322,13 @@ classdef Ksysid
             % scale the data
             if down
                 data_scaled = struct;    % initialize
-                data_scaled.t = data.t;  % time is not scaled
-                data_scaled.y = obj.scaledown.y( data.y );  %data.y * obj.params.scaledown.y;
+                if strcmp( obj.data_type , 'snapshots' )
+                    data_scaled.y_before = obj.scaledown.y( data.y_before );
+                    data_scaled.y_after = obj.scaledown.y( data.y_after );
+                else
+                    data_scaled.y = obj.scaledown.y( data.y );  %data.y * obj.params.scaledown.y;
+                    data_scaled.t = data.t;  % time is not scaled
+                end
                 data_scaled.u = obj.scaledown.u( data.u );  %data.u * obj.params.scaledown.u;
                 if ismember( 'x' , fields(data) )
                     data_scaled.x = obj.scaledown.x( data.x );  %data.x * obj.params.scaledown.x;
@@ -333,8 +338,13 @@ classdef Ksysid
                 end
             else
                 data_scaled = struct;    % initialize
-                data_scaled.t = data.t;  % time is not scaled
-                data_scaled.y = obj.scaleup.y( data.y );    %data.y * obj.params.scaleup.y;
+                if strcmp( obj.data_type , 'snapshots' )
+                    data_scaled.y_before = obj.scaleup.y( data.y_before );
+                    data_scaled.y_after = obj.scaleup.y( data.y_after );
+                else
+                    data_scaled.y = obj.scaleup.y( data.y );    %data.y * obj.params.scaleup.y;
+                    data_scaled.t = data.t;  % time is not scaled
+                end
                 data_scaled.u = obj.scaleup.u( data.u );    %data.u * obj.params.scaleup.u;
                 if ismember( 'x' , fields(data) )
                     data_scaled.x = data.scaleup.x( data.x );    %data.x * obj.params.scaleup.x;
@@ -1833,19 +1843,25 @@ classdef Ksysid
         function err = get_error( obj , simdata , realdata )
             %get_error: Computes the error between real and simulated data.
             
+            % if data is snapshots, rename field accordingly
+            if strcmp( obj.data_type , 'snapshots' )
+                simdata.y = simdata.y_after;
+                realdata.y = realdata.y_after;
+            end
+            
             % scaled down data in [-1,1]
             err.abs = abs( simdata.y - realdata.y );  % absolute error over time
             err.mean = mean( err.abs , 1 );   % average absolute error over time
-            err.rmse = sqrt( sum( (simdata.y - realdata.y).^2 , 1 ) ./ length(realdata.t) ); % RMSE (over each state)
+            err.rmse = sqrt( sum( (simdata.y - realdata.y).^2 , 1 ) ./ size(realdata.y,1) ); % RMSE (over each state)
             err.nrmse = err.rmse ./ abs( max( realdata.y ) - min( realdata.y ) );   % RMSE normalized by total range of real data values
             err.euclid = sqrt( sum( (simdata.y - realdata.y).^2 , 2 ) );    % euclidean distance error in R^n at each point
-            err.euclid_mean = sum( err.euclid ) / length(realdata.t);   % average euclidean distance error over all time steps
+            err.euclid_mean = sum( err.euclid ) / size(realdata.y,1);   % average euclidean distance error over all time steps
             
             % data in original data range
             ysim = obj.scaleup.y( simdata.y );
             yreal = obj.scaleup.y( realdata.y );
             err.unscaled.euclid = sqrt( sum( (ysim - yreal).^2 , 2 ) );    % euclidean distance error in R^n at each point
-            err.unscaled.euclid_mean = sum( err.unscaled.euclid ) / length(realdata.t);   % average euclidean distance error over all time steps
+            err.unscaled.euclid_mean = sum( err.unscaled.euclid ) / size(realdata.y,1);   % average euclidean distance error over all time steps
         end
         
         % plot_comparison (plots a comparison between simulation and real data)
@@ -1868,8 +1884,13 @@ classdef Ksysid
                 title( [ 'NRMSE = ' , num2str( err.nrmse(i) ) ] );
                 ylim([-1,1]);
                 hold on;
-                plot( realdata.t , realdata.y( : , i ) , 'b' );
-                plot( simdata.t , simdata.y( : , i ) , 'r' );
+                if strcmp( obj.data_type , 'snapshots' )
+                    plot( realdata.y_after( : , i ) , 'b' );
+                    plot( simdata.y_after( : , i ) , 'r' );
+                else
+                    plot( realdata.t , realdata.y( : , i ) , 'b' );
+                    plot( simdata.t , simdata.y( : , i ) , 'r' );
+                end
                 hold off;
             end
             legend({'Real' , 'Koopman'});
@@ -1897,12 +1918,16 @@ classdef Ksysid
             results = cell( size(obj.valdata) );    % store results in a cell array
             err = cell( size(obj.valdata) );    % store error in a cell array
             for i = 1 : length(obj.valdata)
-                if strcmp( obj.model_type , 'nonlinear' )
-                    results{i} = obj.val_NLmodel( mod , obj.valdata{i} );
-                elseif strcmp( obj.model_type , 'bilinear' )
-                    results{i} = obj.val_BLmodel( mod , obj.valdata{i} );
+                if strcmp( obj.data_type , 'snapshots' )
+                    results{i} = obj.val_model_snapshots( mod , obj.valdata{i} );
                 else
-                    results{i} = obj.val_model( mod , obj.valdata{i} );
+                    if strcmp( obj.model_type , 'nonlinear' )
+                        results{i} = obj.val_NLmodel( mod , obj.valdata{i} );
+                    elseif strcmp( obj.model_type , 'bilinear' )
+                        results{i} = obj.val_BLmodel( mod , obj.valdata{i} );
+                    else
+                        results{i} = obj.val_model( mod , obj.valdata{i} );
+                    end
                 end
                 err{i} = obj.get_error( results{i}.sim , results{i}.real );
                 obj.plot_comparison( results{i}.sim , results{i}.real , ['Lasso: ' , num2str(mod.lasso)] );
@@ -1917,6 +1942,43 @@ classdef Ksysid
             end
         end
         
+        % val_model_snapshots (validate and plot results for snapshot data)
+        function results = val_model_snapshots( obj , model , valdata )
+            %val_model_snapshots: Compares one-step model simulations to real snapshot data
+            %   model - struct with fields A, B, C, sys, ...
+            %   valdata - struct with fields t, y, u (at least)
+            %   results - struct with simulation results and error calculations
+            
+            % real residual system response
+            results.real.y_before = valdata.y_before;
+            results.real.y_after = valdata.y_after;
+            results.real.u = valdata.u;
+            
+            % simulated residual system response
+            results.sim.y_before = valdata.y_before;    % initialize from same points
+            results.sim.u = valdata.u;
+            
+            % simulate using residual model to get second half of snapshots
+            if strcmp( obj.model_type , 'nonlinear' )
+                for i = 1 : size( valdata.y_before , 1 )   
+                    results.sim.z_before(i,:) = obj.lift.econ_full( [ valdata.y_before(i,:) , valdata.u(i,:) ]' )';
+                    results.sim.z_after(i,:) = ( obj.model.A * results.sim.z_before(i,:)' + model.Beta( results.sim.z_before(i,:)' ) * results.sim.u(i,:)' )';
+                    results.sim.y_after(i,:) = obj.model.C * results.sim.z_after(i,:)';
+                end
+            elseif strcmp( obj.model_type , 'bilinear' )
+                for i = 1 : size( valdata.y_before , 1 ) 
+                    results.sim.z_before(i,:) = obj.lift.econ_full( valdata.y_before(i,:)' )';
+                    results.sim.z_after(i,:) = ( obj.model.A * results.sim.z_before(i,:)' + model.Beta( results.sim.z_before(i,:)' ) * results.sim.u(i,:)' )';
+                    results.sim.y_after(i,:) = obj.model.C * results.sim.z_after(i,:)';
+                end
+            else
+                for i = 1 : size( valdata.y_before , 1 )
+                    results.sim.z_before(i,:) = obj.lift.econ_full( valdata.y_before(i,:)' )';
+                    results.sim.z_after(i,:) = ( obj.model.A * results.sim.z_before(i,:)' + obj.model.B * results.sim.u(i,:)' )';
+                    results.sim.y_after(i,:) = obj.model.C * results.sim.z_after(i,:)';
+                end
+            end
+        end
         
         %% infer the load based on learned dynamics
         
