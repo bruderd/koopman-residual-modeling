@@ -13,7 +13,7 @@ saveon = true;  % decides whether to save the class or not
 params = struct;
 
 % params.sysName = 'thesis-arm-markers_grav-endload-01_3-mods_1-links_20hz';
-params.sysName = 'single-pend2_1-mods_1-links_20hz';
+params.sysName = 'single-pend3_1-mods_1-links_20hz';
 
 params.Nmods = 1;   % number of modules (actuated sections)
 params.nlinks = 1;      % number of links in each module
@@ -31,7 +31,7 @@ params.l = params.L / params.Nlinks;
 % params.k = -0.00001;    % stiffness at each joint
 params.k = -1e-5;    % stiffness at each joint
 params.d = 1e1; %1e-4;    % viscous damping at each joint
-params.m = 3e-1; %1e-1 , 0.0001;   % mass of each link (kg)
+params.m = 3e0; %1e-1 , 0.0001;   % mass of each link (kg)
 params.i = (1/3) * params.m * params.l^2;   % inertia of each link
 params.g = 9.81;    % gravity constant (m/s^2)
 
