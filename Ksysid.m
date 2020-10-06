@@ -34,18 +34,13 @@ classdef Ksysid
     end
     
     methods
-        function obj = Ksysid( data4sysid , varargin )
+        function obj = Ksysid( data4sysid_path , varargin )
             %CLASS CONSTRUCTOR
             %   data - struct with fields t,x,u,y. Contains results of a
             %   simuation or experiment of the system to be identified
             %   (note: this is not necessarily the same data to be used for
             %   sysid, it just provides the dimensions of the state, input,
             %   etc.)
-            
-            % verify that data4sysid has required fields
-            if ~isfield( data4sysid , 'train' ) || ~isfield( data4sysid , 'val' )
-                error('Input must have *train* and *val* fields of type cell array');
-            end
             
             % set defualt values of Name, Value optional arguments
             obj.isupdate = false;
@@ -62,6 +57,11 @@ classdef Ksysid
             % replace default values with user input values
             obj = obj.parse_args( varargin{:} );
             
+            % load and verify that data4sysid has required fields
+            data4sysid = load( data4sysid_path );
+            if ~isfield( data4sysid , 'train' ) || ~isfield( data4sysid , 'val' )
+                error('Input must have *train* and *val* fields of type cell array');
+            end
             % isolate one trial to extract some model parameters
             data = data4sysid.train{1};
             data4train = data4sysid.train;
@@ -132,14 +132,16 @@ classdef Ksysid
             for i = 1 : length( data4val )
                 valdata{i} = obj.scale_data( data4val{i} );
             end
-            obj.traindata = traindata;
-            obj.valdata = valdata;
+%             obj.traindata = traindata;
+            obj.valdata = valdata;  % store validation data
+            obj.traindata = data4sysid_path;    % store path to train data
+
 %             % To suppress scaling, comment this in and comment out above
 %             obj.traindata = data4train_merged;
 %             obj.valdata = data4val;
             
             % get shapshot pairs from traindata
-            obj.snapshotPairs = obj.get_snapshotPairs( obj.traindata , obj.snapshots );
+            obj.snapshotPairs = obj.get_snapshotPairs( traindata , obj.snapshots );
         end
         
         % parse_args: Parses the Name, Value pairs in varargin

@@ -8,12 +8,12 @@
 
 % load in data file(s)
 [ datafile_name , datafile_path ] = uigetfile( 'datafiles/*.mat' , 'Choose data file for sysid...' );
-% data4sysid = load( [datafile_path , datafile_name] );
-data4sysid_path = [datafile_path , datafile_name];
+data4sysid = load( [datafile_path , datafile_name] );
+
 
 
 %% construct sysid class
-Ksysid = Ksysid( data4sysid_path ,...
+Ksysid = Ksysid( data4sysid ,...
         'model_type' , 'bilinear' ,... % model type (linear, bilinear, or nonlinear)
         'obs_type' , { 'poly' } ,...    % type of basis functions
         'obs_degree' , [ 1 ] ,...       % "degree" of basis functions

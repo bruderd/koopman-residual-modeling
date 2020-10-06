@@ -13,7 +13,7 @@ saveon = true;  % decides whether to save the class or not
 params = struct;
 
 % params.sysName = 'thesis-arm-markers_grav-endload-01_3-mods_1-links_20hz';
-params.sysName = 'arm_2-mods_1-links_6kg';
+params.sysName = 'arm-real-markers_2-mods_1-links_3kg';
 
 params.Nmods = 2;   % number of modules (actuated sections)
 params.nlinks = 1;      % number of links in each module
@@ -31,7 +31,7 @@ params.l = params.L / params.Nlinks;
 % params.k = -0.00001;    % stiffness at each joint
 params.k = -1e-5;    % stiffness at each joint
 params.d = 1e1; %1e-4;    % viscous damping at each joint
-params.m = 6e0; %1e-1 , 0.0001;   % mass of each link (kg)
+params.m = 3e0; %1e-1 , 0.0001;   % mass of each link (kg)
 params.i = (1/3) * params.m * params.l^2;   % inertia of each link
 params.g = 9.81;    % gravity constant (m/s^2)
 
@@ -49,7 +49,7 @@ params.umax = 4*pi/8; % maximum input value (scalar for all modules, vector for 
 
 %% Create class for this system
 
-Arm = Arm( params , 'output_type' , 'endeff');   % choice is 'angles' or 'markers' or 'endeff' or 'shape'
+Arm = Arm( params , 'output_type' , 'markers');   % choice is 'angles' or 'markers' or 'endeff' or 'shape'
 
 % adjust the ny parameter based on the output type chosen
 if strcmp( Arm.output_type , 'endeff' )
