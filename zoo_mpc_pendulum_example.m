@@ -13,7 +13,7 @@
 Kmpc = Kmpc( Ksysid ,...
         'horizon' , 2 ,...
         'input_bounds' , [-pi,pi],... %[ -7*pi/8 , 7*pi/8 ] ,... % DO NOT USE INF
-        'input_slopeConst' , [1e-1],... %1e-1 ,...
+        'input_slopeConst' , [1e-3],... %1e-1 ,...
         'input_smoothConst' , [],... %[1e-1] ,...
         'state_bounds' , [] ,...
         'cost_running' , 10 ,...   % 0.1
@@ -23,7 +23,7 @@ Kmpc = Kmpc( Ksysid ,...
 
 %% set parameters
 saveon = true;  % save a datafile if this is true
-num_steps = 100; % number of snapshots to generate for training
+num_steps = 100; % number of steps to take in trial
 u_min = -pi;    % minimum input
 u_max = pi;     % maximum input
 
@@ -33,11 +33,12 @@ u_max = pi;     % maximum input
 % rand_vec_utemp = rand( num_steps , 1 );
 % u_temp = (1 - rand_vec_utemp) * u_min + rand_vec_utemp * u_max;
 
-% % ramp
-% u_temp = linspace( 0 , 7*pi/8 , num_steps )';
+% ramp
+u_temp = [linspace( 0 , 7*pi/8 , num_steps )' ,...
+          linspace( 0 , -4*pi/8 , num_steps )' ];
 
-% step
-u_temp = ones( num_steps , 1 ) * pi/2;
+% % step
+% u_temp = ones( num_steps , Ksysid.params.m ) * pi/2;
 
 % % steps
 % u_temp = [ ones( num_steps - floor(num_steps/2) , 1 ) * pi/2;...
@@ -46,8 +47,8 @@ u_temp = ones( num_steps , 1 ) * pi/2;
 %% Simulate the systems using the residual model mpc controller
 
 % set initial conditions
-Alpha0_real = [ 0 , 0 ]';    % joint angle/velocity
-Alpha0_temp = [ 0 , 0 ]';    % joint anlge/velocity
+Alpha0_real = zeros( Arm_real.params.nx , 1 );    % joint angle/velocity
+Alpha0_temp = zeros( Arm_temp.params.nx , 1 );    % joint anlge/velocity
 x0_real = Arm_real.get_y( Alpha0_real' )';   % end effector coordinates
 x0_temp = Arm_temp.get_y( Alpha0_temp' )';   % end effector coordinates
 
@@ -68,16 +69,16 @@ Alpha_real(1,:) = Alpha0_real';
 Alpha_temp(1,:) = Alpha0_temp';
 Alpha_comp(1,:) = Alpha0_real';
 for i = 1 : num_steps - 1
-    % lift the state of the resitual model
+    % lift the state of the residual model
     xres_k = [ x_real(i,:) - x_temp(i,:) , x_real(i,:) , u_temp(i,:) ]';
-    ures_k = u_real(i,:) - u_temp(i,:);
+    ures_k = ( u_real(i,:) - u_temp(i,:) )';
     
     % solve for optimal input into residual model using mpc
     if i == 1
         current.y = Ksysid.scaledown.y( xres_k' );
-        current.u = Ksysid.scaledown.u( 0 );
+        current.u = Ksysid.scaledown.u( zeros( 1 , Ksysid.params.m ) );
     else
-        current.y = Ksysid.scaledown.u( xres_k' );
+        current.y = Ksysid.scaledown.y( xres_k' );
         current.u = Ksysid.scaledown.u( ures_k' );
     end
     refhor = [ 0 , 0 ; 0 , 0]; % goal is to drive error to zero

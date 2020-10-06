@@ -13,7 +13,7 @@
 Kmpc = Kmpc( Ksysid ,...
         'horizon' , 2 ,...
         'input_bounds' , [-pi,pi],... %[ -7*pi/8 , 7*pi/8 ] ,... % DO NOT USE INF
-        'input_slopeConst' , [],... %1e-1 ,...
+        'input_slopeConst' , [1e-1],... %1e-1 ,...
         'input_smoothConst' , [],... %[1e-1] ,...
         'state_bounds' , [] ,...
         'cost_running' , 10 ,...   % 0.1
@@ -29,16 +29,25 @@ u_max = pi;     % maximum input
 
 %% Generate sequence of inputs for the template model
 
-rand_vec_utemp = rand( num_steps , 1 );
-u_temp = (1 - rand_vec_utemp) * u_min + rand_vec_utemp * u_max;
+% % random
+% rand_vec_utemp = rand( num_steps , 1 );
+% u_temp = (1 - rand_vec_utemp) * u_min + rand_vec_utemp * u_max;
 
-u_temp = linspace( 0 , 7*pi/8 , num_steps )';
+% % ramp
+% u_temp = linspace( 0 , 7*pi/8 , num_steps )';
+
+% step
+u_temp = ones( num_steps , Ksysid.params.m ) * pi/4;
+
+% % steps
+% u_temp = [ ones( num_steps - floor(num_steps/2) , 1 ) * pi/2;...
+%            -ones( floor(num_steps/2) , 1 ) * pi/4];
 
 %% Simulate the systems using the residual model mpc controller
 
 % set initial conditions
-Alpha0_real = [ 0 , 0 ]';    % joint angle/velocity
-Alpha0_temp = [ 0 , 0 ]';    % joint anlge/velocity
+Alpha0_real = zeros( Arm_real.params.nx , 1 );    % joint angle/velocity
+Alpha0_temp = zeros( Arm_temp.params.nx , 1 );    % joint anlge/velocity
 x0_real = Arm_real.get_y( Alpha0_real' )';   % end effector coordinates
 x0_temp = Arm_temp.get_y( Alpha0_temp' )';   % end effector coordinates
 
@@ -59,7 +68,7 @@ Alpha_real(1,:) = Alpha0_real';
 Alpha_temp(1,:) = Alpha0_temp';
 Alpha_comp(1,:) = Alpha0_real';
 for i = 1 : num_steps - 1
-    % lift the state of the resitual model
+    % lift the state of the residual model
     xres_k = [ x_real(i,:) - x_temp(i,:) , x_real(i,:) , u_temp(i,:) ]';
     ures_k = u_real(i,:) - u_temp(i,:);
     

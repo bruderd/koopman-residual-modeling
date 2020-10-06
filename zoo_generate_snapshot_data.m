@@ -3,7 +3,7 @@
 % Simulate the pendulum systems from a bunch of different initial
 % conditions to get snapshot data
 
-% Systeim: Single pendulum with end effector position as the state
+% System: Single pendulum with end effector position as the state
 
 %% load in the real and template models for a single pendulum system
 foo = load(['systems' , filesep , 'single-pend2_1-mods_1-links_20hz' , filesep , 'single-pend2_1-mods_1-links_20hz.mat']);
